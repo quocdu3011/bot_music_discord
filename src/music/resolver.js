@@ -1,100 +1,197 @@
-const play = require('play-dl');
+const YouTube = require('youtube-sr').default;
+const { LoadType } = require('shoukaku');
 
 const MAX_PLAYLIST_SIZE = 25;
+const YOUTUBE_URL_PATTERN =
+  /^(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//i;
 
-function isUrl(value) {
-  return /^https?:\/\//i.test(value);
+function isYouTubeUrl(value) {
+  return YOUTUBE_URL_PATTERN.test(value);
 }
 
-function ensurePlayableVideo(video) {
-  if (!video) {
-    throw new Error('Không lấy được thông tin video từ YouTube.');
+function isPlaylistUrl(value) {
+  return /[?&]list=/i.test(value);
+}
+
+function truncate(value, maxLength) {
+  if (!value || value.length <= maxLength) {
+    return value;
   }
 
-  if (video.private) {
-    throw new Error('Video YouTube này đang ở trạng thái private.');
+  return `${value.slice(0, maxLength - 3)}...`;
+}
+
+function formatDuration(durationInMs) {
+  if (!Number.isFinite(durationInMs) || durationInMs <= 0) {
+    return 'LIVE';
   }
 
-  if (video.live) {
-    throw new Error('Bot hiện chưa hỗ trợ phát livestream YouTube.');
+  const totalSeconds = Math.floor(durationInMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
   }
 
-  if (video.upcoming) {
-    throw new Error('Video YouTube này chưa được phát hành.');
+  return [minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
+}
+
+function ensurePlayableTrack(track) {
+  if (!track?.encoded || !track.info) {
+    throw new Error('Khong lay duoc du lieu bai hat tu Lavalink.');
+  }
+
+  if (track.info.sourceName !== 'youtube') {
+    throw new Error('Bot chi ho tro nguon nhac tu YouTube.');
+  }
+
+  if (track.info.isStream) {
+    throw new Error('Bot hien chua ho tro phat livestream YouTube.');
   }
 }
 
-function toTrack(video, requestedBy) {
-  ensurePlayableVideo(video);
+function toTrack(track, requestedBy) {
+  ensurePlayableTrack(track);
 
   return {
-    title: video.title ?? 'Không rõ tiêu đề',
-    url: video.url,
-    durationInSec: Number(video.durationInSec ?? 0),
-    durationRaw: video.durationRaw ?? 'Không rõ thời lượng',
+    encoded: track.encoded,
+    title: track.info.title ?? 'Khong ro tieu de',
+    url:
+      track.info.uri ??
+      `https://www.youtube.com/watch?v=${encodeURIComponent(track.info.identifier ?? '')}`,
+    durationInMs: Number(track.info.length ?? 0),
+    durationRaw: formatDuration(Number(track.info.length ?? 0)),
+    thumbnail: track.info.artworkUrl ?? null,
+    author: track.info.author ?? 'Khong ro tac gia',
     requestedBy
   };
 }
 
-async function resolveTracks(query, requestedBy) {
-  const validation = await play.validate(query);
+function resolveIdentifier(query) {
+  if (isYouTubeUrl(query)) {
+    return query;
+  }
 
-  if (validation === 'yt_video') {
-    const info = await play.video_basic_info(query);
+  return `ytsearch:${query}`;
+}
 
+async function resolveTracks(node, query, requestedBy) {
+  const trimmed = query.trim();
+
+  if (!trimmed) {
+    throw new Error('Ban can nhap ten bai hat hoac link YouTube.');
+  }
+
+  if (!node) {
+    throw new Error('Lavalink chua san sang de tim nhac.');
+  }
+
+  if (/^https?:\/\//i.test(trimmed) && !isYouTubeUrl(trimmed)) {
+    throw new Error('Bot chi ho tro link YouTube hoac tu khoa tim kiem.');
+  }
+
+  const result = await node.rest.resolve(resolveIdentifier(trimmed));
+
+  if (!result) {
+    throw new Error('Lavalink khong tra ve ket qua nao.');
+  }
+
+  if (result.loadType === LoadType.ERROR) {
+    throw new Error(result.data?.message || 'Lavalink gap loi khi tai bai hat.');
+  }
+
+  if (result.loadType === LoadType.EMPTY) {
+    throw new Error('Khong tim thay video phu hop tren YouTube.');
+  }
+
+  if (result.loadType === LoadType.TRACK) {
     return {
-      kind: 'video',
-      tracks: [toTrack(info.video_details, requestedBy)]
+      kind: isPlaylistUrl(trimmed) ? 'playlist' : 'video',
+      tracks: [toTrack(result.data, requestedBy)]
     };
   }
 
-  if (validation === 'yt_playlist') {
-    const playlist = await play.playlist_info(query);
-    const videos = await playlist.all_videos();
-    const tracks = videos
-      .filter((video) => !video.private && !video.live && !video.upcoming)
-      .slice(0, MAX_PLAYLIST_SIZE)
-      .map((video) => toTrack(video, requestedBy));
+  if (result.loadType === LoadType.SEARCH) {
+    const firstPlayable = result.data.find((track) => {
+      try {
+        ensurePlayableTrack(track);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
+    if (!firstPlayable) {
+      throw new Error('Khong tim thay video YouTube co the phat duoc.');
+    }
+
+    return {
+      kind: 'search',
+      tracks: [toTrack(firstPlayable, requestedBy)]
+    };
+  }
+
+  if (result.loadType === LoadType.PLAYLIST) {
+    const converted = result.data.tracks
+      .map((track) => {
+        try {
+          return toTrack(track, requestedBy);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    const tracks = converted.slice(0, MAX_PLAYLIST_SIZE);
 
     if (tracks.length === 0) {
-      throw new Error('Playlist không có video hợp lệ để phát.');
+      throw new Error('Playlist khong co video hop le de phat.');
     }
 
     return {
       kind: 'playlist',
-      title: playlist.title ?? 'Playlist YouTube',
-      totalFound: videos.length,
-      truncated: videos.length > MAX_PLAYLIST_SIZE,
+      title: result.data.info?.name ?? 'Playlist YouTube',
+      truncated: converted.length > MAX_PLAYLIST_SIZE,
       tracks
     };
   }
 
-  if (validation && validation !== 'search') {
-    throw new Error('Bot chỉ hỗ trợ nguồn phát từ YouTube.');
+  throw new Error('Lavalink tra ve kieu du lieu khong ho tro.');
+}
+
+async function autocompleteQuery(query) {
+  const trimmed = query.trim();
+
+  if (!trimmed) {
+    return [];
   }
 
-  if (isUrl(query)) {
-    throw new Error('Bot chỉ hỗ trợ link video hoặc playlist YouTube.');
+  if (isYouTubeUrl(trimmed)) {
+    return [];
   }
 
-  const results = await play.search(query, {
-    limit: 1,
-    source: {
-      youtube: 'video'
-    }
+  const results = await YouTube.search(trimmed, {
+    limit: 10,
+    type: 'video',
+    safeSearch: false
   });
 
-  if (!results.length) {
-    throw new Error('Không tìm thấy video phù hợp trên YouTube.');
-  }
-
-  return {
-    kind: 'search',
-    tracks: [toTrack(results[0], requestedBy)]
-  };
+  return results
+    .filter((video) => video.url && !video.private)
+    .slice(0, 10)
+    .map((video) => ({
+      name: truncate(
+        `${video.title ?? 'Khong ro tieu de'} (${video.durationFormatted ?? formatDuration((video.duration ?? 0) * 1000)})`,
+        100
+      ),
+      value: video.url
+    }));
 }
 
 module.exports = {
   MAX_PLAYLIST_SIZE,
+  autocompleteQuery,
   resolveTracks
 };

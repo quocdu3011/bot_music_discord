@@ -1,21 +1,24 @@
 {
   "name": "bot_music_discord",
   "version": "1.0.0",
-  "description": "Discord music bot using Node.js, discord.js and YouTube audio sources.",
+  "description": "Discord music bot using Node.js, discord.js, Lavalink and Shoukaku.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "check": "node --check src/index.js && node --check src/music/subscription.js && node --check src/music/resolver.js"
+    "deploy": "node src/deploy-commands.js",
+    "check": "node --check src/index.js && node --check src/deploy-commands.js && node --check src/music/lavalink.js && node --check src/music/subscription.js && node --check src/music/resolver.js && node --check src/music/player-manager.js && node --check src/commands/index.js && node --check src/commands/play.js && node --check src/commands/skip.js && node --check src/commands/stop.js && node --check src/commands/leave.js && node --check src/commands/pause.js && node --check src/commands/resume.js && node --check src/commands/queue.js && node --check src/commands/utils.js"
   },
   "engines": {
     "node": ">=22.12.0"
   },
   "dependencies": {
     "@discordjs/voice": "^0.19.0",
+    "@distube/ytdl-core": "^4.16.12",
     "discord.js": "^14.22.1",
     "dotenv": "^17.2.3",
-    "play-dl": "^1.9.7",
-    "tweetnacl": "^1.0.3"
+    "shoukaku": "^4.3.0",
+    "tweetnacl": "^1.0.3",
+    "youtube-sr": "^4.3.11"
   }
 }

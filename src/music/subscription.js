@@ -1,115 +1,64 @@
-const {
-  AudioPlayerStatus,
-  NoSubscriberBehavior,
-  VoiceConnectionStatus,
-  createAudioPlayer,
-  createAudioResource,
-  entersState,
-  generateDependencyReport,
-  joinVoiceChannel
-} = require('@discordjs/voice');
 const { escapeMarkdown } = require('discord.js');
-const play = require('play-dl');
-
-function buildJoinError(error, voiceChannel) {
-  if (error?.code === 'ABORT_ERR' || error?.name === 'AbortError') {
-    return new Error(
-      [
-        `Khong the ket noi voice channel "${voiceChannel.name}" trong thoi gian cho.`,
-        'Nguyen nhan thuong gap:',
-        '- Bot thieu quyen View Channel / Connect / Speak.',
-        '- Voice channel da day, hoac day la Stage channel can quyen bo sung.',
-        '- VPS, Docker hoac firewall dang chan ket noi UDP ra Discord voice server.',
-        'Neu dang chay tren VPS/container, hay kiem tra outbound UDP va thu doi server/voice region.'
-      ].join('\n')
-    );
-  }
-
-  return error instanceof Error ? error : new Error('Khong the ket noi voice channel.');
-}
 
 class MusicSubscription {
   constructor({
+    lavalink,
     guildId,
     voiceChannel,
     textChannel,
     disconnectTimeoutMs,
-    connection,
+    player,
     onDestroy
   }) {
+    this.lavalink = lavalink;
     this.guildId = guildId;
     this.voiceChannelId = voiceChannel.id;
     this.textChannel = textChannel;
     this.disconnectTimeoutMs = disconnectTimeoutMs;
-    this.connection = connection;
+    this.player = player;
     this.onDestroy = onDestroy;
     this.queue = [];
     this.currentTrack = null;
     this.destroyed = false;
     this.leaveTimer = null;
-
-    this.player = createAudioPlayer({
-      behaviors: {
-        noSubscriber: NoSubscriberBehavior.Pause
-      }
+    this.player.on('start', () => {
+      void this.announceCurrentTrack();
     });
+    this.player.on('end', (event) => {
+      if (this.destroyed || event.reason === 'replaced') {
+        return;
+      }
 
-    this.connection.subscribe(this.player);
-
-    this.player.on(AudioPlayerStatus.Idle, () => {
       this.currentTrack = null;
       void this.playNext();
     });
-
-    this.player.on('error', (error) => {
-      console.error(`[music:${this.guildId}] playback error`, error);
-      void this.safeSend('Không thể phát bài hiện tại, bot sẽ chuyển sang bài tiếp theo.');
-      this.currentTrack = null;
-
-      if (this.player.state.status !== AudioPlayerStatus.Idle) {
-        this.player.stop(true);
-      }
+    this.player.on('exception', (event) => {
+      console.error(`[music:${this.guildId}] lavalink track exception`, event);
+      void this.handleTrackFailure('Khong the phat bai hien tai, bot se thu bai tiep theo.');
     });
-
-    this.connection.on('error', (error) => {
-      console.error(`[music:${this.guildId}] voice connection error`, error);
+    this.player.on('stuck', (event) => {
+      console.error(`[music:${this.guildId}] lavalink track stuck`, event);
+      void this.handleTrackFailure('Bai hien tai bi tre qua lau, bot se thu bai tiep theo.');
     });
-
-    this.connection.on(VoiceConnectionStatus.Disconnected, async () => {
-      try {
-        await Promise.race([
-          entersState(this.connection, VoiceConnectionStatus.Signalling, 5_000),
-          entersState(this.connection, VoiceConnectionStatus.Connecting, 5_000)
-        ]);
-      } catch {
-        this.destroy();
+    this.player.on('closed', (event) => {
+      console.warn(`[music:${this.guildId}] voice websocket dong: ${event.code} ${event.reason}`);
+      if (!this.destroyed) {
+        void this.destroy();
       }
     });
   }
 
   static async create(options) {
-    const connection = joinVoiceChannel({
+    const player = await options.lavalink.joinVoiceChannel({
       channelId: options.voiceChannel.id,
       guildId: options.guildId,
-      adapterCreator: options.voiceChannel.guild.voiceAdapterCreator,
-      selfDeaf: true
+      shardId: options.shardId,
+      deaf: true
     });
-
-    try {
-      await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
-    } catch (error) {
-      console.error(
-        `[music:${options.guildId}] voice connection failed for channel ${options.voiceChannel.id}`,
-        error
-      );
-      console.error(generateDependencyReport());
-      connection.destroy();
-      throw buildJoinError(error, options.voiceChannel);
-    }
 
     return new MusicSubscription({
       ...options,
-      connection
+      player
     });
   }
 
@@ -121,11 +70,12 @@ class MusicSubscription {
     return this.voiceChannelId === channelId;
   }
 
+  isBusy() {
+    return Boolean(this.currentTrack) || this.queue.length > 0;
+  }
+
   enqueue(tracks) {
-    const startedNow =
-      !this.currentTrack &&
-      this.queue.length === 0 &&
-      this.player.state.status === AudioPlayerStatus.Idle;
+    const startedNow = !this.currentTrack && this.queue.length === 0;
 
     this.cancelLeaveTimer();
     this.queue.push(...tracks);
@@ -146,11 +96,11 @@ class MusicSubscription {
     };
   }
 
-  skip() {
+  async skip() {
     this.cancelLeaveTimer();
 
     if (this.currentTrack) {
-      this.player.stop(true);
+      await this.player.stopTrack();
       return true;
     }
 
@@ -162,18 +112,33 @@ class MusicSubscription {
     return false;
   }
 
-  pause() {
-    return this.player.pause();
+  async pause() {
+    if (!this.currentTrack || this.player.paused) {
+      return false;
+    }
+
+    await this.player.setPaused(true);
+    return true;
   }
 
-  resume() {
-    return this.player.unpause();
+  async resume() {
+    if (!this.currentTrack || !this.player.paused) {
+      return false;
+    }
+
+    await this.player.setPaused(false);
+    return true;
   }
 
-  stopAndClearQueue() {
+  async stopAndClearQueue() {
     this.queue = [];
+    const hadTrack = Boolean(this.currentTrack);
     this.currentTrack = null;
-    this.player.stop(true);
+
+    if (hadTrack) {
+      await this.player.stopTrack().catch(() => {});
+    }
+
     this.scheduleLeave();
   }
 
@@ -193,25 +158,41 @@ class MusicSubscription {
     this.currentTrack = track;
 
     try {
-      const info = await play.video_info(track.url);
-      const source = await play.stream_from_info(info);
-      const resource = createAudioResource(source.stream, {
-        inputType: source.type,
-        metadata: track
-      });
+      if (!track?.encoded || typeof track.encoded !== 'string') {
+        throw new Error('Track khong co du lieu Lavalink hop le.');
+      }
 
-      this.player.play(resource);
-      await this.safeSend(
-        `Dang phat: **${escapeMarkdown(track.title)}** (${track.durationRaw})\nNguoi yeu cau: ${track.requestedBy}`
-      );
+      await this.player.playTrack({
+        track: {
+          encoded: track.encoded
+        }
+      });
     } catch (error) {
       console.error(`[music:${this.guildId}] unable to start track`, error);
-      await this.safeSend(
+      await this.handleTrackFailure(
         `Khong the phat bai **${escapeMarkdown(track.title)}**. Bot se thu bai tiep theo.`
       );
-      this.currentTrack = null;
-      await this.playNext();
     }
+  }
+
+  async announceCurrentTrack() {
+    if (!this.currentTrack) {
+      return;
+    }
+
+    await this.safeSend(
+      `Dang phat: **${escapeMarkdown(this.currentTrack.title)}** (${this.currentTrack.durationRaw})\nNguoi yeu cau: ${this.currentTrack.requestedBy}`
+    );
+  }
+
+  async handleTrackFailure(message) {
+    if (this.destroyed) {
+      return;
+    }
+
+    await this.safeSend(message);
+    this.currentTrack = null;
+    await this.playNext();
   }
 
   scheduleLeave() {
@@ -219,7 +200,7 @@ class MusicSubscription {
 
     this.leaveTimer = setTimeout(() => {
       void this.safeSend('Hang doi da trong. Bot se roi khoi voice channel.');
-      this.destroy();
+      void this.destroy();
     }, this.disconnectTimeoutMs);
   }
 
@@ -244,7 +225,7 @@ class MusicSubscription {
     }
   }
 
-  destroy() {
+  async destroy() {
     if (this.destroyed) {
       return;
     }
@@ -253,12 +234,14 @@ class MusicSubscription {
     this.cancelLeaveTimer();
     this.queue = [];
     this.currentTrack = null;
-    this.player.stop(true);
-    this.connection.destroy();
 
     if (this.onDestroy) {
       this.onDestroy(this.guildId);
     }
+
+    await this.lavalink.leaveVoiceChannel(this.guildId).catch((error) => {
+      console.error(`[music:${this.guildId}] unable to leave voice channel`, error);
+    });
   }
 }
 

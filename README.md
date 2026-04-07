@@ -1,20 +1,36 @@
-# Discord Music Bot (Node.js)
+# Discord Music Bot (Node.js + Lavalink)
 
-Bot Discord nay phat nhac tu YouTube vao voice channel bang Node.js.
+Bot Discord nay phat nhac YouTube vao voice channel bang `discord.js`, `Shoukaku` va `Lavalink`.
+
+Ban nay duoc chinh lai de phat nhac qua Lavalink thay vi stream truc tiep tu Node.js. Cach nay on dinh hon ro ret cho bot rieng, giam loi `Invalid URL`, `Failed to find any playable formats` va cac loi phat YouTube truc tiep.
 
 ## Tinh nang
 
-- Phat nhac tu link video YouTube
-- Tim bai bang tu khoa YouTube
-- Ho tro playlist YouTube, tu dong them toi da 25 bai dau tien
-- Hang doi rieng cho tung server
-- Lenh co san: `play`, `skip`, `stop`, `leave`, `queue`, `pause`, `resume`
+- Slash commands, khong can `Message Content Intent`
+- `/play <ten bai hat | link YouTube>`
+- `/skip`
+- `/stop`
+- `/leave`
+- `/queue`
+- `/pause`
+- `/resume`
+- Tim nhac YouTube theo tu khoa
+- Ho tro playlist YouTube, gioi han 25 bai dau tien
+- Queue rieng cho tung server
+- Tu dong roi voice channel khi hang doi trong lau
+
+## Kien truc
+
+- Bot Node.js chi xu ly Discord commands, queue va trang thai player
+- Lavalink xu ly voice + load track
+- Plugin `youtube-source` cua Lavalink xu ly YouTube
 
 ## Yeu cau
 
 - Node.js `22.12.0` tro len
-- Mot Discord bot token hop le
-- Bat `Message Content Intent` trong Discord Developer Portal
+- Docker + Docker Compose de chay Lavalink
+- Discord bot token hop le
+- `DISCORD_CLIENT_ID` de deploy slash commands
 
 ## Cai dat
 
@@ -24,21 +40,47 @@ Bot Discord nay phat nhac tu YouTube vao voice channel bang Node.js.
 npm install
 ```
 
-2. Tao file `.env` tu mau:
+2. Tao file `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-3. Dien token bot vao `.env`:
+3. Dien thong tin vao `.env`:
 
 ```env
 DISCORD_TOKEN=token_cua_ban
-COMMAND_PREFIX=!
+DISCORD_CLIENT_ID=application_id_cua_bot
+DISCORD_GUILD_ID=id_server_de_test
 DISCONNECT_TIMEOUT_MS=180000
+LAVALINK_HOST=127.0.0.1
+LAVALINK_PORT=2333
+LAVALINK_PASSWORD=youshallnotpass
+LAVALINK_SECURE=false
+LAVALINK_NODE_NAME=local
 ```
 
-4. Chay bot:
+`DISCORD_GUILD_ID` la tuy chon, nhung nen co khi test bot rieng de slash commands cap nhat ngay.
+
+4. Khoi dong Lavalink:
+
+```bash
+docker compose up -d
+```
+
+Neu muon xem log Lavalink:
+
+```bash
+docker compose logs -f lavalink
+```
+
+5. Dang ky slash commands:
+
+```bash
+npm run deploy
+```
+
+6. Chay bot:
 
 ```bash
 npm start
@@ -46,31 +88,39 @@ npm start
 
 ## Quyen bot can co
 
-Khi moi bot vao server, dam bao bot co cac quyen sau:
-
 - `View Channels`
 - `Send Messages`
 - `Read Message History`
 - `Connect`
 - `Speak`
 
-Neu muon bot doc lenh dang van ban, hay bat them `Message Content Intent` trong trang cai dat bot.
+Neu voice channel co `user limit`, bot co the can them `Move Members`.
 
 ## Cach dung
 
-- `!play <ten bai hat>`: tim va phat bai dau tien phu hop tren YouTube
-- `!play <link YouTube>`: phat video hoac them playlist vao hang doi
-- `!skip`: bo qua bai hien tai
-- `!pause`: tam dung
-- `!resume`: tiep tuc
-- `!queue`: xem hang doi
-- `!stop`: dung phat va xoa hang doi
-- `!leave`: roi voice channel
-- `!help`: xem danh sach lenh
+- `/play <ten bai hat>`: tim tren YouTube va phat bai dau tien
+- `/play <link YouTube>`: phat video hoac them playlist vao queue
+- `/skip`: bo qua bai dang phat
+- `/pause`: tam dung
+- `/resume`: tiep tuc
+- `/queue`: xem hang doi
+- `/stop`: dung phat va xoa queue
+- `/leave`: roi voice channel
 
-## Luu y
+## File quan trong
 
-- Bot chi lay nguon nhac tu YouTube.
-- Livestream, video private va video chua phat hanh khong duoc ho tro.
-- Playlist YouTube duoc gioi han 25 bai dau tien de tranh queue qua dai.
-- Neu bot dang chay tren VPS, Docker hoac host cloud va join voice bi timeout, thu kiem tra outbound UDP/firewall. Discord voice su dung ket noi UDP nen neu UDP bi chan thi bot se dang nhap duoc nhung khong vao duoc voice channel.
+- `src/index.js`: khoi dong Discord client va Lavalink connector
+- `src/music/lavalink.js`: cau hinh Shoukaku/Lavalink
+- `src/music/player-manager.js`: quan ly player theo guild
+- `src/music/subscription.js`: queue, playback flow va auto-leave
+- `src/music/resolver.js`: resolve query YouTube qua Lavalink
+- `compose.yml`: chay Lavalink bang Docker
+- `lavalink/application.yml`: cau hinh Lavalink + youtube plugin
+
+## Ghi chu van hanh
+
+- Bot chi ho tro YouTube va tim kiem YouTube.
+- Livestream YouTube khong duoc ho tro.
+- Playlist YouTube chi nap 25 bai dau tien de tranh queue qua dai.
+- Neu `/play` bao Lavalink chua san sang, hay kiem tra `docker compose ps` va log Lavalink.
+- Neu bot dang chay tren may khac voi Lavalink, doi `LAVALINK_HOST`, `LAVALINK_PORT`, `LAVALINK_PASSWORD` cho dung.
