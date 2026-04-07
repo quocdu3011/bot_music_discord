@@ -73,3 +73,4 @@ Neu muon bot doc lenh dang van ban, hay bat them `Message Content Intent` trong 
 - Bot chi lay nguon nhac tu YouTube.
 - Livestream, video private va video chua phat hanh khong duoc ho tro.
 - Playlist YouTube duoc gioi han 25 bai dau tien de tranh queue qua dai.
+- Neu bot dang chay tren VPS, Docker hoac host cloud va join voice bi timeout, thu kiem tra outbound UDP/firewall. Discord voice su dung ket noi UDP nen neu UDP bi chan thi bot se dang nhap duoc nhung khong vao duoc voice channel.

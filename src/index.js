@@ -66,10 +66,24 @@ async function ensureSubscription(message) {
   const permissions = voiceChannel.permissionsFor(message.guild.members.me);
 
   if (
+    !permissions?.has(PermissionFlagsBits.ViewChannel) ||
     !permissions?.has(PermissionFlagsBits.Connect) ||
     !permissions?.has(PermissionFlagsBits.Speak)
   ) {
-    await message.channel.send('Bot can quyen `Connect` va `Speak` trong voice channel.');
+    await message.channel.send(
+      'Bot can quyen `View Channel`, `Connect` va `Speak` trong voice channel.'
+    );
+    return null;
+  }
+
+  if (
+    voiceChannel.userLimit > 0 &&
+    voiceChannel.members.size >= voiceChannel.userLimit &&
+    !permissions.has(PermissionFlagsBits.MoveMembers)
+  ) {
+    await message.channel.send(
+      'Voice channel hien dang day. Hay tang user limit hoac cap them quyen `Move Members` cho bot.'
+    );
     return null;
   }
 
@@ -100,7 +114,9 @@ async function ensureSubscription(message) {
     return subscription;
   } catch (error) {
     console.error(`[music:${message.guild.id}] unable to join voice channel`, error);
-    await message.channel.send('Khong the tham gia voice channel. Kiem tra quyen cua bot roi thu lai.');
+    await message.channel.send(
+      error.message ?? 'Khong the tham gia voice channel. Kiem tra quyen cua bot roi thu lai.'
+    );
     return null;
   }
 }
@@ -232,7 +248,7 @@ async function handleSimplePlaybackCommand(message, command) {
   }
 }
 
-client.once('ready', () => {
+client.once('clientReady', () => {
   console.log(`Bot da dang nhap voi ten ${client.user.tag}`);
   console.log(`Tien to lenh: ${prefix}`);
 });

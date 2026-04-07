@@ -5,10 +5,28 @@ const {
   createAudioPlayer,
   createAudioResource,
   entersState,
+  generateDependencyReport,
   joinVoiceChannel
 } = require('@discordjs/voice');
 const { escapeMarkdown } = require('discord.js');
 const play = require('play-dl');
+
+function buildJoinError(error, voiceChannel) {
+  if (error?.code === 'ABORT_ERR' || error?.name === 'AbortError') {
+    return new Error(
+      [
+        `Khong the ket noi voice channel "${voiceChannel.name}" trong thoi gian cho.`,
+        'Nguyen nhan thuong gap:',
+        '- Bot thieu quyen View Channel / Connect / Speak.',
+        '- Voice channel da day, hoac day la Stage channel can quyen bo sung.',
+        '- VPS, Docker hoac firewall dang chan ket noi UDP ra Discord voice server.',
+        'Neu dang chay tren VPS/container, hay kiem tra outbound UDP va thu doi server/voice region.'
+      ].join('\n')
+    );
+  }
+
+  return error instanceof Error ? error : new Error('Khong the ket noi voice channel.');
+}
 
 class MusicSubscription {
   constructor({
@@ -77,7 +95,17 @@ class MusicSubscription {
       selfDeaf: true
     });
 
-    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+    try {
+      await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+    } catch (error) {
+      console.error(
+        `[music:${options.guildId}] voice connection failed for channel ${options.voiceChannel.id}`,
+        error
+      );
+      console.error(generateDependencyReport());
+      connection.destroy();
+      throw buildJoinError(error, options.voiceChannel);
+    }
 
     return new MusicSubscription({
       ...options,
