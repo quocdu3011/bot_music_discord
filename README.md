@@ -68,10 +68,22 @@ LAVALINK_NODE_NAME=local
 docker compose up -d
 ```
 
+Neu may cua ban dung Docker Compose kieu cu va khong ho tro `docker compose`, dung:
+
+```bash
+docker-compose up -d
+```
+
 Neu muon xem log Lavalink:
 
 ```bash
 docker compose logs -f lavalink
+```
+
+Hoac voi Docker Compose cu:
+
+```bash
+docker-compose logs -f lavalink
 ```
 
 5. Dang ky slash commands:
@@ -114,7 +126,7 @@ Neu voice channel co `user limit`, bot co the can them `Move Members`.
 - `src/music/player-manager.js`: quan ly player theo guild
 - `src/music/subscription.js`: queue, playback flow va auto-leave
 - `src/music/resolver.js`: resolve query YouTube qua Lavalink
-- `compose.yml`: chay Lavalink bang Docker
+- `docker-compose.yml`: chay Lavalink bang Docker
 - `lavalink/application.yml`: cau hinh Lavalink + youtube plugin
 
 ## Ghi chu van hanh
@@ -124,3 +136,4 @@ Neu voice channel co `user limit`, bot co the can them `Move Members`.
 - Playlist YouTube chi nap 25 bai dau tien de tranh queue qua dai.
 - Neu `/play` bao Lavalink chua san sang, hay kiem tra `docker compose ps` va log Lavalink.
 - Neu bot dang chay tren may khac voi Lavalink, doi `LAVALINK_HOST`, `LAVALINK_PORT`, `LAVALINK_PASSWORD` cho dung.
+- Ban compose hien tai khong mount `plugins` va `logs` ra ngoai nua. Cach nay tranh loi quyen ghi cua image Lavalink tren may ca nhan. Plugin YouTube se duoc container tu tai ve khi khoi dong.

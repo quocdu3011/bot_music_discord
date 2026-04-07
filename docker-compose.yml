@@ -7,5 +7,3 @@ services:
       - "2333:2333"
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
-      - ./lavalink/plugins:/opt/Lavalink/plugins
-      - ./lavalink/logs:/opt/Lavalink/logs
