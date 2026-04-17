@@ -52,6 +52,7 @@ cp .env.example .env
 DISCORD_TOKEN=token_cua_ban
 DISCORD_CLIENT_ID=application_id_cua_bot
 DISCORD_GUILD_ID=id_server_de_test
+DISCORD_GUILD_IDS=id_server_1,id_server_2
 DISCONNECT_TIMEOUT_MS=180000
 LAVALINK_HOST=127.0.0.1
 LAVALINK_PORT=2333
@@ -60,7 +61,9 @@ LAVALINK_SECURE=false
 LAVALINK_NODE_NAME=local
 ```
 
-`DISCORD_GUILD_ID` la tuy chon, nhung nen co khi test bot rieng de slash commands cap nhat ngay.
+`DISCORD_GUILD_ID` la tuy chon neu chi dang ky cho 1 server test.
+`DISCORD_GUILD_IDS` la tuy chon neu muon dang ky nhanh cho nhieu server test, cach nhau bang dau phay.
+Neu dat ca hai bien, script se lay tat ca guild IDs khong trung nhau.
 
 4. Khoi dong Lavalink:
 
